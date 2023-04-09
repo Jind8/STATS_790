@@ -1,0 +1,366 @@
+---
+title: |
+  | STATS 790
+  | Assignment 4
+author: Doudou Jin -- 400174871
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+format: pdf
+output: 
+  pdf_document:
+    latex_engine: xelatex
+fontsize: 11pt
+geometry: margin = 1in
+linestretch: 1.5
+bibliography: STATS790A4.bib
+nocite: '@*'
+---
+
+\newpage
+
+# Q1
+
+```{r warning=FALSE,message=FALSE}
+library(readr)
+library(tidymodels)
+library(vcd)
+library(gridExtra)
+library(ggplot2)
+library(dplyr)
+library(randomForest)
+library(caret)
+```
+
+
+
+# Dataset
+
+## Descriptions
+The early stage diabetes risk prediction dataset[@dataset] will be used in this assignment, which can be downloaded from the UCI Machine Learning Repository. This dataset includes the diagnosis outcomes (Positive or Negative) of early stage diabetes.
+
+The dataset was collected through direct questionnaires from patients of Sylhet Diabetes Hospital in Sylhet, Bangladesh, and was given from a publication _Likelihood Prediction of Diabetes at Early Stage Using Data Mining Techniques_ by Islam, MM Faniqul, et al [@paper]. Three machine learning algorithms were employed in this study to predict the diabetes risk, including Naive Bayes (NB), Logistic Regression, and Random Forest (RF). The researchers found that Random Forest was the best classification method with the highest overall accuracy in predicting the likelihood of diabetes at an early stage.
+
+The dataset contains 520 patients and a total of 17 attributes. There are 2 demographic features (i.e. Age, Gender) and 14 clinical features which include both common and less common sign symptoms. All the clinical features are binary, with values of either No or Yes. The Gender is also binary with Male or Female as its values, and the Age is the only predictor that is continuous. The response variable, _class_, is also binary, with values of either Positive or Negative. 
+
+
+```{r warning=FALSE,message=FALSE}
+# import dataset
+
+diabetes <- read_csv("diabetes_data_upload.csv")
+```
+
+```{r}
+# correct the class of each variable
+
+for (i in names(diabetes)){
+  if (i == "Age"){
+    diabetes[[i]] <- diabetes[[i]]
+  }
+  else {
+    diabetes[[i]] <- as.factor(diabetes[[i]])
+  }
+}
+
+```
+
+```{r}
+# change column names to correct the column name format
+
+colnames(diabetes) <- c("Age", "Gender", "Polyuria", "Polydipsia"
+                        , "suddenWeightLoss", "weakness", "Polyphagia"
+                        , "GenitalThrush", "visualBlurring", "Itching"
+                        , "Irritability", "delayedHealing", "partialParesis"
+                        , "muscleStiffness", "Alopecia", "Obesity", "class")
+```
+
+
+## Explanatory analysis
+
+```{r}
+# check missing values
+
+for (col in names(diabetes)) {
+  num_missing <- sum(is.na(diabetes[[col]]))
+  cat(col, "has", num_missing, "missing values.\n")
+}
+```
+
+```{r}
+# proportion of positive class and nagetive class
+
+diabetes %>%
+  group_by(class) %>%
+  summarise(proportions = n()/520) 
+```
+
+```{r fig.cap = "Bar Plot for Class", out.width = "70%"}
+barplot(table(diabetes$class))
+```
+
+There are no missing values in this dataset, so there is no need for data imputation. The bar plot shows that the number of Positive classes is higher than that of Negative classes, with an approximate ratio of 8:5. Based on this ratio, we do not consider this dataset to be imbalanced.
+
+```{r echo = T, results = 'hide',fig.show="hide", warning=FALSE, message=FALSE}
+# create mosaic plots to investigate associations between each predictor 
+# and response variable
+
+vcd::mosaic(xtabs(~Gender+class, data = diabetes),shade=TRUE)
+f1 <- grid.grab() 
+vcd::mosaic(xtabs(~Polyuria+class, data = diabetes),shade=TRUE)
+f2 <- grid.grab() 
+vcd::mosaic(xtabs(~Polydipsia+class, data = diabetes),shade=TRUE)
+f3 <- grid.grab() 
+vcd::mosaic(xtabs(~suddenWeightLoss+class, data = diabetes),shade=TRUE)
+f4 <- grid.grab() 
+vcd::mosaic(xtabs(~weakness+class, data = diabetes),shade=TRUE)
+f5 <- grid.grab() 
+vcd::mosaic(xtabs(~Polyphagia+class, data = diabetes),shade=TRUE)
+f6 <- grid.grab() 
+vcd::mosaic(xtabs(~GenitalThrush+class, data = diabetes),shade=TRUE)
+f7 <- grid.grab() 
+vcd::mosaic(xtabs(~visualBlurring+class, data = diabetes),shade=TRUE)
+f8 <- grid.grab() 
+vcd::mosaic(xtabs(~Itching+class, data = diabetes),shade=TRUE)
+f9 <- grid.grab() 
+vcd::mosaic(xtabs(~Irritability+class, data = diabetes),shade=TRUE)
+f10 <- grid.grab() 
+vcd::mosaic(xtabs(~delayedHealing+class, data = diabetes),shade=TRUE)
+f11 <- grid.grab() 
+vcd::mosaic(xtabs(~partialParesis+class, data = diabetes),shade=TRUE)
+f12 <- grid.grab() 
+vcd::mosaic(xtabs(~muscleStiffness+class, data = diabetes),shade=TRUE)
+f13 <- grid.grab() 
+vcd::mosaic(xtabs(~Alopecia+class, data = diabetes),shade=TRUE)
+f14 <- grid.grab() 
+vcd::mosaic(xtabs(~Obesity+class, data = diabetes),shade=TRUE)
+f15 <- grid.grab() 
+```
+
+```{r out.width = "70%", fig.cap = "Mosaic Plots for Gender and Polyuria"}
+grid.arrange(f1,f2, ncol = 2, nrow = 1)
+```
+
+```{r out.width = "70%", fig.cap = "Mosaic Plots for Polydipsia and suddenWeightLoss"}
+grid.arrange(f3,f4, ncol = 2, nrow = 1)
+```
+
+```{r out.width = "70%", fig.cap = "Mosaic Plots for weakness and Polyphagia"}
+grid.arrange(f5,f6, ncol = 2, nrow = 1)
+```
+
+```{r out.width = "70%", fig.cap = "Mosaic Plots for GenitalThrush and visualBlurring"}
+grid.arrange(f7,f8, ncol = 2, nrow = 1)
+```
+
+```{r out.width = "70%", fig.cap = "Mosaic Plots for Itching and Irritability"}
+grid.arrange(f9,f10, ncol = 2)
+```
+
+```{r out.width = "70%", fig.cap = "Mosaic Plots for delayedHealing and partialParesis"}
+grid.arrange(f11,f12, ncol = 2, nrow = 1)
+```
+
+```{r out.width = "70%", fig.cap = "Mosaic Plots for muscleStiffness and Alopecia"}
+grid.arrange(f13,f14, ncol = 2, nrow = 1)
+```
+
+```{r out.width = "50%", fig.cap = "Mosaic Plot for Obesity"}
+grid.arrange(f15, ncol = 1, nrow = 1)
+```
+
+```{r out.width = "70%", fig.cap = "Density Plot for Age"}
+# create density plot to investigate associations between Age and class
+
+d1 <- ggplot(data = diabetes, aes(x = Age, fill = class)) +
+        geom_density(alpha = 0.5) +
+        theme_minimal() +
+        labs(title = "Density Plot for Age")
+d1
+```
+
+```{r}
+diabetes %>% group_by(class) %>% summarize(mean = mean(Age))
+```
+```{r}
+# perform Mann-Whitney test
+
+wilcox.test(Age~class, data = diabetes)
+```
+
+Based on the above mosaic plots, it is evident that the predictors _Gender_, _Polyuria_, _Polydipsia_, _suddenWeightLoss_, _Polyphagia_, and _partialParesis_ have strong associations with the response variable, with corresponding p-values that are extremely small. This suggests that these variables may play important roles in the prediction process. By considering both the density plot and Mann-Whitney test for Age, we can observe that the distributions of the Positive class and Negative class by age are different, implying that age is also a statistically significant variable for prediction. Additionally, the mean age of the Positive class is slightly higher than that of the Negative class. It is reasonable to assume that the likelihood of diabetes increases with age.
+
+
+
+## split dataset
+
+```{r}
+# split dataset in training set and test set, with a ratio of 7:3
+set.seed(1)
+
+train <- diabetes %>% mutate(index=1:nrow(diabetes)) %>%
+  mutate(n=n()) %>%
+  sample_frac(size=0.7, weight=n) %>%
+  ungroup()
+
+train_index <- train$index
+test <- diabetes[-train_index, ]
+train <- train[,1:17]
+```
+
+To preserve the underlying patterns, we split the dataset into a training set and a test set with a ratio of 7:3. This will allow the algorithm to learn the patterns and avoid overfitting.
+
+## Feature Selection
+
+```{r out.width = "70%", fig.cap = "Error Rate by Number of Variables"}
+set.seed(1)
+diabetesFS <- rfcv(trainx = train[,1:16], trainy = train$class, cv.fold = 5
+                   , scale = "log", step = 0.8,
+                   mtry=function(p) max(1, floor(sqrt(p))), recursive=FALSE)
+with(diabetesFS, plot(n.var, error.cv, type="o", lwd=2
+                      , xlab ="Number of Variables", ylab = "CV Error"))
+```
+
+Feature selection is an important process in model fitting. Removing redundant predictors can reduce noise and improve prediction performance. In this assignment, we have employed the Random Forest Cross-Validation method for feature selection. Five-fold cross-validation has been used to train the model and assess prediction performance. The number of predictors has been reduced based on their ranking of variable importance.
+
+Based on the plot, we can observe that the error rates decrease rapidly from 1 variable to 8 variables, and then decrease steadily from 10 variables onwards, reaching the lowest error rates at 16 variables. Consequently, the error rate is the lowest when all predictors are utilized. Based this finding, we decided to keep all predictors.
+
+
+# Random Forest
+
+Random Forest was selected for this assignment due to its excellent prediction performance in the publication. Random Forest[@breimanRandomForests2001] is a supervised machine learning algorithm that ensembles a collection of decision trees and obtains the prediction performance by averaging the performance of each decision tree. Since the decision trees are built by drawing bootstrap samples and fitting the out-of-bag data, the error rate is also referred to as the OOB error rate.
+
+Random Forest is suitable for both continuous and categorical predictors and generally performs well on classification problems. Therefore, it is an appropriate method for this dataset.
+
+Note that the Random Forest does not require scaling or one-hot encoding as it is a tree-based method. Additionally, we should be aware that both predictors, _Polyuria_ and _Polydipsia_, have very small proportions of the Negative class when they both have sign symptoms. However, both variables are important predictors, and we do not consider dropping or lumping this category.
+
+
+## Tune the model
+
+```{r out.width = "70%", fig.cap = "OOB Error Rate by Values of mtry"}
+# tune the model
+
+set.seed(1)
+
+diabetesTune <- tuneRF(x = train[,1:16], y = train$class, mtryStart = 2
+                       , ntreeTry = 500, stepFactor = 2, improve = 0.05
+                       , plot = TRUE, doBest = TRUE)
+
+```
+
+Firstly, the hyperparameter _mtry_ is tuned. The optimal value of _mtry_ is 4, which corresponds to the lowest OOB error rate. The optimal value of _mtry_ is determined by fitting different values of _mtry_ to the model and estimating the corresponding OOB error rate. In this case, the loss function is the OOB error rate, which ranges from 0 to 1.
+
+
+```{r out.width = "70%", fig.cap = "OOB Error Rate by Number of Trees, ntree = 1000"}
+set.seed(1)
+diabetesRF1 <- randomForest(class~., data = train, ntree=1000, mtry = 4)
+
+plot(diabetesRF1)
+```
+
+```{r}
+set.seed(1)
+diabetesRF <- randomForest(class~., data = train, ntree=520, mtry = 4)
+diabetesRF
+```
+
+```{r out.width = "70%", fig.cap = "OOB Error Rate by Number of Trees, ntree = 520"}
+plot(diabetesRF)
+```
+
+
+Next, the number of trees (_ntree_) is tuned. By ensembling 1000 decision trees, we can observe that the OOB error rate remains constant after around 550 trees. Therefore, we can reduce the number of trees to 550 and determine that the optimal number of trees is 520, which corresponds to the lowest OOB error rate.
+
+## Fitting the Model and Prediction
+
+```{r}
+diabetesRFpred <- predict(diabetesRF, test)
+confusionMatrix(diabetesRFpred, test$class, positive = "Positive")
+```
+
+After fitting the model with the optimal values of _mtry_ and _ntree_ and predicting using the test set, the prediction performance is shown above. The overall accuracy is 96.79%. Four patients in the Negative class are classified as Positive, and one patient in the Positive class is classified as Negative. As our goal is to predict the diabetes risk in the early stage, it is more important to predict the Positive class accurately. The sensitivity measures how well the model classifies the Positive class. For this model, the sensitivity is slightly lower than the specificity, while the positive predicted value is a little higher than the negative predicted value. This indicates that the model performs slightly better in identifying the Negative class.
+
+
+## Variable Importance
+
+```{r out.width = "70%", fig.cap = "Variable Importance Plot"}
+imp <- importance(diabetesRF)
+imp
+varImpPlot(diabetesRF)
+```
+
+The mean decrease in Gini is a measure that assesses how well the predictors affect the node impurity in a decision tree. The node impurity is a measure that reflects how well the decision tree is split. The higher the mean decrease in Gini, the more important the predictors are for splitting the decision tree, as they contribute more to reducing the node impurity.
+
+From the plot above, we observe that the predictors, _Polyuria_, _Polydipsia_, _Gender_, _Age_ and _suddenWeightLoss_ play important roles in Random Forest model, which confirmed the results we observed in exploratory analysis.
+
+## Partial Dependent Plot
+
+```{r out.width = "70%", fig.cap = "Partial Dependence Plots for Each Predictors (1)"}
+impvar <- rownames(imp)[order(imp[, 1], decreasing=TRUE)]
+op <- par(mfrow=c(2, 3))
+for (i in 1:6) {
+    partialPlot(x = diabetesRF, pred.data = as.data.frame(train)
+                , x.var = impvar[i], xlab = impvar[i],
+                main=paste("Partial Dependence on", impvar[i])
+                , which.class = "Positive")
+}
+par(op)
+```
+```{r out.width = "70%", fig.cap = "Partial Dependence Plots for Each Predictors (2)"}
+op <- par(mfrow=c(2, 3))
+for (i in 7:12) {
+    partialPlot(x = diabetesRF, pred.data = as.data.frame(train)
+                , x.var = impvar[i], xlab = impvar[i],
+                main=paste("Partial Dependence on", impvar[i]))
+}
+par(op)
+```
+```{r out.width = "70%", fig.cap = "Partial Dependence Plots for Each Predictors (3)"}
+op <- par(mfrow=c(2, 3))
+for (i in 13:16) {
+    partialPlot(x = diabetesRF, pred.data = as.data.frame(train)
+                , x.var = impvar[i], xlab = impvar[i],
+                main=paste("Partial Dependence on", impvar[i]))
+}
+par(op)
+```
+
+The partial dependence plots show the marginal effect of each predictor on predicting Positive class, and the plots are ranked by variable importance. There are several predictors with low variable importance but have a high marginal effect on predicting Positive class, including _weakness_, _Polyphagia_ and _Alopecia_.
+
+\newpage
+
+![Q2.a](1.jpg)
+
+\newpage
+
+![Q2.a](2.jpg)
+
+\newpage
+
+![Q2.a](3.jpg)
+
+\newpage
+
+![Q2.a](4.jpg)
+
+\newpage
+
+![Q2.b](5.jpg)
+
+\newpage
+
+![Q2.b](6.jpg)
+
+\newpage
+
+![Q2.b](7.jpg)
+
+\newpage
+
+![Q2.b](8.jpg)
+
+\newpage
+
+# Reference
+
+<div id="refs"></div>
+
+
+
